@@ -1,0 +1,15 @@
+{
+  "name": "personalizacion33",
+  "version": "1.0.0",
+  "description": "Servidor mínimo que lista los proyectos públicos del usuario de GitHub configurado.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node -e \"require('node:fs');\""
+  },
+  "keywords": ["github", "repos", "node"],
+  "author": "",
+  "license": "MIT"
+}

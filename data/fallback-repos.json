@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "name": "personalizacion33",
+    "description": "Repositorio de ejemplo para listar proyectos.",
+    "language": "JavaScript",
+    "html_url": "https://github.com/ncolex/personalizacion33",
+    "homepage": "",
+    "updated_at": "2025-01-01T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "name": "landing-portfolio",
+    "description": "Landing page responsive.",
+    "language": "TypeScript",
+    "html_url": "https://github.com/ncolex/landing-portfolio",
+    "homepage": "https://ncolex.dev",
+    "updated_at": "2025-02-10T12:30:00Z"
+  }
+]

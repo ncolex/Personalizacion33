@@ -1,0 +1,186 @@
+import http from 'node:http';
+import https from 'node:https';
+import { URL, fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+const PORT = Number(process.env.PORT || 3000);
+const GITHUB_USER = process.env.GITHUB_USER || 'ncolex';
+const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FALLBACK_PATH = path.join(__dirname, '..', 'data', 'fallback-repos.json');
+const FALLBACK_REPOS = (() => {
+  try {
+    const contents = readFileSync(FALLBACK_PATH, 'utf-8');
+    return JSON.parse(contents);
+  } catch (error) {
+    console.warn('No se pudo cargar el fallback de repositorios:', error);
+    return [];
+  }
+})();
+
+let cachedRepos = null;
+let cacheTimestamp = 0;
+
+function fetchJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const requestUrl = new URL(url);
+    const lib = requestUrl.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      {
+        ...options,
+        hostname: requestUrl.hostname,
+        path: `${requestUrl.pathname}${requestUrl.search}`,
+        method: options.method || 'GET',
+        headers: {
+          'User-Agent': 'Personalizacion33-App',
+          Accept: 'application/vnd.github+json',
+          ...(options.headers || {}),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(data));
+            } catch (err) {
+              reject(new Error('Respuesta JSON inválida de GitHub.'));
+            }
+          } else {
+            reject(new Error(`GitHub respondió con ${res.statusCode}: ${data}`));
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function fetchRepos() {
+  const now = Date.now();
+  if (cachedRepos && now - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedRepos;
+  }
+
+  try {
+    const data = await fetchJson(
+      `https://api.github.com/users/${GITHUB_USER}/repos?sort=updated&per_page=100`
+    );
+    cachedRepos = data.map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      description: repo.description,
+      language: repo.language,
+      html_url: repo.html_url,
+      homepage: repo.homepage,
+      updated_at: repo.updated_at,
+    }));
+    cacheTimestamp = now;
+    return cachedRepos;
+  } catch (error) {
+    console.error('Fallo al consultar GitHub:', error.message);
+    const fallback = cachedRepos && cachedRepos.length ? cachedRepos : FALLBACK_REPOS;
+    cachedRepos = fallback;
+    cacheTimestamp = now;
+    return fallback;
+  }
+}
+
+function renderHtml(repos) {
+  const items = repos
+    .map(
+      (repo) => `
+      <article>
+        <h2><a href="${repo.html_url}" target="_blank" rel="noopener noreferrer">${repo.name}</a></h2>
+        <p>${repo.description || 'Sin descripción disponible.'}</p>
+        <p><strong>Lenguaje:</strong> ${repo.language || 'N/A'} | <strong>Actualizado:</strong> ${new Date(
+        repo.updated_at
+      ).toLocaleString()}</p>
+        ${repo.homepage ? `<p><a href="${repo.homepage}" target="_blank" rel="noopener noreferrer">Demo</a></p>` : ''}
+      </article>`
+    )
+    .join('\n');
+
+  return `<!DOCTYPE html>
+  <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Repositorios de ${GITHUB_USER}</title>
+      <style>
+        :root { color-scheme: dark; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 2rem; background: #020617; color: #f8fafc; }
+        h1 { text-align: center; margin-bottom: 1.5rem; }
+        article { background: #0f172a; border-radius: 0.75rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.7); }
+        a { color: #38bdf8; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        footer { text-align: center; margin-top: 2rem; color: #94a3b8; font-size: 0.9rem; }
+      </style>
+    </head>
+    <body>
+      <h1>Proyectos públicos de ${GITHUB_USER}</h1>
+      ${items || '<p>No hay repositorios públicos disponibles.</p>'}
+      <footer>
+        Datos actualizados cada ${Math.round(CACHE_TTL_MS / 1000)} segundos.
+      </footer>
+    </body>
+  </html>`;
+}
+
+function sendJson(res, statusCode, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+const server = http.createServer(async (req, res) => {
+  if (!req.url) {
+    sendJson(res, 400, { message: 'Solicitud inválida' });
+    return;
+  }
+
+  if (req.url.startsWith('/health')) {
+    sendJson(res, 200, { status: 'ok', timestamp: new Date().toISOString() });
+    return;
+  }
+
+  if (req.url.startsWith('/api/repos')) {
+    try {
+      const repos = await fetchRepos();
+      sendJson(res, 200, { data: repos });
+    } catch (error) {
+      console.error('Error API repos:', error);
+      sendJson(res, 502, { message: 'No se pudieron obtener los repositorios.', detail: error.message });
+    }
+    return;
+  }
+
+  if (req.url === '/' || req.url.startsWith('/?')) {
+    try {
+      const repos = await fetchRepos();
+      const html = renderHtml(repos);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    } catch (error) {
+      console.error('Error renderizando HTML:', error);
+      sendJson(res, 502, { message: 'No se pudo renderizar la lista de repositorios.', detail: error.message });
+    }
+    return;
+  }
+
+  sendJson(res, 404, { message: 'Ruta no encontrada' });
+});
+
+server.listen(PORT, () => {
+  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  console.log(`Listado público de https://github.com/${GITHUB_USER}`);
+});

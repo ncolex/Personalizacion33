@@ -7,6 +7,7 @@ import path from 'node:path';
 const PORT = Number(process.env.PORT || 3000);
 const GITHUB_USER = process.env.GITHUB_USER || 'ncolex';
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FALLBACK_PATH = path.join(__dirname, '..', 'data', 'fallback-repos.json');
 const FALLBACK_REPOS = (() => {
@@ -59,6 +60,31 @@ function fetchJson(url, options = {}) {
 
     req.on('error', reject);
     req.end();
+  });
+}
+
+function readJsonBody(req, limit = 100 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > limit) {
+        reject(new Error('El cuerpo de la solicitud excede el límite permitido.'));
+        req.destroy();
+      }
+    });
+
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        resolve(parsed);
+      } catch (error) {
+        reject(new Error('No se pudo interpretar el cuerpo JSON.'));
+      }
+    });
+
+    req.on('error', reject);
   });
 }
 
@@ -133,6 +159,65 @@ function renderHtml(repos) {
   </html>`;
 }
 
+async function generateWithGemini(prompt) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Falta la variable de entorno GEMINI_API_KEY.');
+  }
+
+  const payload = JSON.stringify({
+    contents: [
+      {
+        parts: [{ text: prompt }],
+      },
+    ],
+  });
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'generativelanguage.googleapis.com',
+        path: `/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const json = JSON.parse(data);
+              const text =
+                json.candidates?.[0]?.content?.parts
+                  ?.map((part) => part.text)
+                  .filter(Boolean)
+                  .join(' ')
+                  .trim() || '';
+              resolve({
+                text,
+                raw: json,
+              });
+            } catch (error) {
+              reject(new Error('Respuesta JSON inválida de Gemini.'));
+            }
+          } else {
+            reject(new Error(`Gemini respondió con ${res.statusCode}: ${data}`));
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 function sendJson(res, statusCode, payload) {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
@@ -160,6 +245,27 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
       console.error('Error API repos:', error);
       sendJson(res, 502, { message: 'No se pudieron obtener los repositorios.', detail: error.message });
+    }
+    return;
+  }
+
+  if (req.url.startsWith('/api/gemini/generate') && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      if (!prompt) {
+        sendJson(res, 400, { message: 'Se requiere el campo "prompt" en el cuerpo.' });
+        return;
+      }
+
+      const result = await generateWithGemini(prompt);
+      sendJson(res, 200, { result: result.text || null });
+    } catch (error) {
+      console.error('Error generando con Gemini:', error.message);
+      sendJson(res, 502, {
+        message: 'No se pudo procesar la solicitud con Gemini.',
+        detail: error.message,
+      });
     }
     return;
   }

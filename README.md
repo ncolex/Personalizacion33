@@ -13,6 +13,7 @@ La aplicación expone:
 
 - `GET /` – Página HTML con estilo oscuro y listado de repositorios ordenados por última actualización.
 - `GET /api/repos` – Respuesta JSON con la misma información para consumirla desde otras apps.
+- `POST /api/gemini/generate` – Genera texto con Gemini sin exponer la clave API al cliente. Recibe `{ "prompt": "..." }` y responde con `{ "result": "..." }`.
 - `GET /health` – End-point sencillo para monitoreo.
 
 Variables de entorno disponibles:
@@ -20,6 +21,7 @@ Variables de entorno disponibles:
 - `PORT`: Puerto donde escuchará el servidor (por defecto `3000`).
 - `GITHUB_USER`: Usuario del cual se obtendrán los repos (por defecto `ncolex`).
 - `CACHE_TTL_MS`: Duración del caché en milisegundos (por defecto 300000 ms = 5 min).
+- `GEMINI_API_KEY`: Clave privada de Gemini usada por el endpoint de generación de texto.
 
 > Cuando GitHub no es accesible el servicio responde con el último resultado en caché o un conjunto pequeño de datos de respaldo (`data/fallback-repos.json`), evitando así errores 500.
 

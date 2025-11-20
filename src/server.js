@@ -85,7 +85,6 @@ function readJsonBody(req, limit = 100 * 1024) {
         error.statusCode = 413;
         req.off('data', onData);
         req.off('end', onEnd);
-        req.off('error', onError);
         req.resume();
         reject(error);
       }

@@ -66,25 +66,46 @@ function fetchJson(url, options = {}) {
 function readJsonBody(req, limit = 100 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let rejected = false;
 
-    req.on('data', (chunk) => {
+    const onError = (error) => {
+      if (!rejected) {
+        rejected = true;
+        reject(error);
+      }
+    };
+
+    const onData = (chunk) => {
+      if (rejected) return;
+
       body += chunk;
       if (Buffer.byteLength(body) > limit) {
-        reject(new Error('El cuerpo de la solicitud excede el límite permitido.'));
-        req.destroy();
+        rejected = true;
+        const error = new Error('El cuerpo de la solicitud excede el límite permitido.');
+        error.statusCode = 413;
+        req.off('data', onData);
+        req.off('end', onEnd);
+        req.off('error', onError);
+        req.resume();
+        reject(error);
       }
-    });
+    };
 
-    req.on('end', () => {
+    const onEnd = () => {
+      if (rejected) return;
+
       try {
         const parsed = JSON.parse(body || '{}');
         resolve(parsed);
       } catch (error) {
         reject(new Error('No se pudo interpretar el cuerpo JSON.'));
       }
-    });
+    };
 
-    req.on('error', reject);
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
+
   });
 }
 
@@ -262,10 +283,18 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { result: result.text || null });
     } catch (error) {
       console.error('Error generando con Gemini:', error.message);
-      sendJson(res, 502, {
-        message: 'No se pudo procesar la solicitud con Gemini.',
-        detail: error.message,
-      });
+      const statusCode = error.statusCode === 413 ? 413 : 502;
+      const message =
+        statusCode === 413
+          ? 'El cuerpo de la solicitud excede el límite permitido.'
+          : 'No se pudo procesar la solicitud con Gemini.';
+
+      if (!res.writableEnded) {
+        sendJson(res, statusCode, {
+          message,
+          detail: error.message,
+        });
+      }
     }
     return;
   }

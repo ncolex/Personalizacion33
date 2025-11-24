@@ -8,6 +8,8 @@ const PORT = Number(process.env.PORT || 3000);
 const GITHUB_USER = process.env.GITHUB_USER || 'ncolex';
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const APIHUB33_BASE_URL = process.env.APIHUB33_BASE_URL || '';
+const APIHUB33_API_KEY = process.env.APIHUB33_API_KEY || '';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FALLBACK_PATH = path.join(__dirname, '..', 'data', 'fallback-repos.json');
 const FALLBACK_REPOS = (() => {
@@ -63,6 +65,11 @@ function fetchJson(url, options = {}) {
   });
 }
 
+function ensureLeadingSlash(value) {
+  if (!value) return '/';
+  return value.startsWith('/') ? value : `/${value}`;
+}
+
 function readJsonBody(req, limit = 100 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -116,6 +123,21 @@ async function fetchRepos() {
     cacheTimestamp = now;
     return fallback;
   }
+}
+
+async function fetchApiHub33(endpoint = '/health') {
+  if (!APIHUB33_BASE_URL) {
+    throw new Error('Falta la variable de entorno APIHUB33_BASE_URL.');
+  }
+
+  const target = new URL(ensureLeadingSlash(endpoint), APIHUB33_BASE_URL);
+  const headers = APIHUB33_API_KEY
+    ? {
+        Authorization: `Bearer ${APIHUB33_API_KEY}`,
+      }
+    : {};
+
+  return fetchJson(target.toString(), { headers });
 }
 
 function renderHtml(repos) {
@@ -266,6 +288,19 @@ const server = http.createServer(async (req, res) => {
         message: 'No se pudo procesar la solicitud con Gemini.',
         detail: error.message,
       });
+    }
+    return;
+  }
+
+  if (req.url.startsWith('/api/apihub33') && req.method === 'GET') {
+    try {
+      const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+      const endpoint = ensureLeadingSlash(requestUrl.searchParams.get('endpoint') || '/health');
+      const data = await fetchApiHub33(endpoint);
+      sendJson(res, 200, { data });
+    } catch (error) {
+      console.error('Error API apihub33:', error.message);
+      sendJson(res, 502, { message: 'No se pudo contactar con apihub33.', detail: error.message });
     }
     return;
   }

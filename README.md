@@ -22,7 +22,8 @@ Variables de entorno disponibles:
 - `PORT`: Puerto donde escuchará el servidor (por defecto `3000`).
 - `GITHUB_USER`: Usuario del cual se obtendrán los repos (por defecto `ncolex`).
 - `CACHE_TTL_MS`: Duración del caché en milisegundos (por defecto 300000 ms = 5 min).
-- `GEMINI_API_KEY`: Clave privada de Gemini usada por el endpoint de generación de texto.
+- `GEMINI_API_KEY`: Clave privada de Gemini usada por el endpoint de generación de texto. Puede
+  omitirse si defines `API_KEY` (alias aceptado por la app).
 - `APIHUB33_BASE_URL`: URL base de apihub33 que se utilizará para el proxy (`https://...`).
 - `APIHUB33_API_KEY`: Token opcional que se envía como `Authorization: Bearer ...` en las peticiones a apihub33.
 

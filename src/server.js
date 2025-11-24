@@ -7,7 +7,8 @@ import path from 'node:path';
 const PORT = Number(process.env.PORT || 3000);
 const GITHUB_USER = process.env.GITHUB_USER || 'ncolex';
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 5 * 60 * 1000);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY =
+  process.env.GEMINI_API_KEY || process.env.API_KEY || '';
 const APIHUB33_BASE_URL = process.env.APIHUB33_BASE_URL || '';
 const APIHUB33_API_KEY = process.env.APIHUB33_API_KEY || '';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -183,7 +184,9 @@ function renderHtml(repos) {
 
 async function generateWithGemini(prompt) {
   if (!GEMINI_API_KEY) {
-    throw new Error('Falta la variable de entorno GEMINI_API_KEY.');
+    throw new Error(
+      'Falta la variable de entorno GEMINI_API_KEY (o API_KEY como alias).'
+    );
   }
 
   const payload = JSON.stringify({

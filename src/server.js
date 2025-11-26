@@ -126,12 +126,24 @@ async function fetchRepos() {
   }
 }
 
-async function fetchApiHub33(endpoint = '/health') {
+function buildApiHub33Url(endpoint = 'health') {
+  const sanitizedEndpoint = String(endpoint || '')
+    .replace(/^\//, '')
+    .trim();
+
+  const base = APIHUB33_BASE_URL.endsWith('/')
+    ? APIHUB33_BASE_URL
+    : `${APIHUB33_BASE_URL}/`;
+
+  return new URL(sanitizedEndpoint || 'health', base);
+}
+
+async function fetchApiHub33(endpoint = 'health') {
   if (!APIHUB33_BASE_URL) {
     throw new Error('Falta la variable de entorno APIHUB33_BASE_URL.');
   }
 
-  const target = new URL(ensureLeadingSlash(endpoint), APIHUB33_BASE_URL);
+  const target = buildApiHub33Url(endpoint);
   const headers = APIHUB33_API_KEY
     ? {
         Authorization: `Bearer ${APIHUB33_API_KEY}`,
@@ -298,7 +310,7 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/apihub33') && req.method === 'GET') {
     try {
       const requestUrl = new URL(req.url, `http://${req.headers.host}`);
-      const endpoint = ensureLeadingSlash(requestUrl.searchParams.get('endpoint') || '/health');
+      const endpoint = requestUrl.searchParams.get('endpoint') || 'health';
       const data = await fetchApiHub33(endpoint);
       sendJson(res, 200, { data });
     } catch (error) {

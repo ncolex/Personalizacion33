@@ -153,6 +153,15 @@ async function fetchApiHub33(endpoint = 'health') {
   return fetchJson(target.toString(), { headers });
 }
 
+function getPublicConfig() {
+  return {
+    githubUser: GITHUB_USER,
+    cacheTtlMs: CACHE_TTL_MS,
+    geminiEnabled: Boolean(GEMINI_API_KEY),
+    apiHub33Enabled: Boolean(APIHUB33_BASE_URL),
+  };
+}
+
 function renderHtml(repos) {
   const items = repos
     .map(
@@ -189,6 +198,7 @@ function renderHtml(repos) {
       ${items || '<p>No hay repositorios públicos disponibles.</p>'}
       <footer>
         Datos actualizados cada ${Math.round(CACHE_TTL_MS / 1000)} segundos.
+        ${!GEMINI_API_KEY ? '<br />Gemini está deshabilitado hasta configurar GEMINI_API_KEY o API_KEY en el servidor.' : ''}
       </footer>
     </body>
   </html>`;
@@ -275,6 +285,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url.startsWith('/api/config')) {
+    sendJson(res, 200, { data: getPublicConfig() });
+    return;
+  }
+
   if (req.url.startsWith('/api/repos')) {
     try {
       const repos = await fetchRepos();
@@ -287,6 +302,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.url.startsWith('/api/gemini/generate') && req.method === 'POST') {
+    if (!GEMINI_API_KEY) {
+      sendJson(res, 503, {
+        message: 'La funcionalidad de Gemini no está habilitada.',
+        detail: 'Configura GEMINI_API_KEY o API_KEY en el entorno del servidor.',
+      });
+      return;
+    }
+
     try {
       const body = await readJsonBody(req);
       const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
